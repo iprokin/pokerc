@@ -1,7 +1,17 @@
 # pokerc
 
-Functional Poker Odds Calculator aiming
+Functional Poker Odds Calculator.
 
+What works:
+* Finding out combinations.
+
+To-to:
+* Determination of the winner
+* Monte-Carlo computation of P(win).
+
+
+\
+\
 
 <pre>
 Copyright 2017 Ilya Prokin
