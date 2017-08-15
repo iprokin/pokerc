@@ -55,7 +55,6 @@ instance Show Suit where
                Hearts   -> "♥ "
                Spades   -> "♠ "
 
-
 data Card = Card
   { rank :: Rank
   , suit :: Suit
@@ -64,9 +63,6 @@ instance Ord Card where
   compare = compare `on` rank
 instance Show Card where
   show (Card r s) = show r ++ show s
-
-getSuit Card {rank=_, suit=s} = s
-getRank Card {rank=r, suit=_} = r
 
 allSuits = [Clubs, Diamonds, Hearts, Spades]
 allRanks = [Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten, Jack, Queen, King, Ace]
@@ -79,59 +75,42 @@ giveCardsToPlayers 0 _ _  = []
 giveCardsToPlayers nPlayers nCards deck = 
     [take nCards deck] ++ giveCardsToPlayers (nPlayers-1) nCards (drop nCards deck)
 
-countSuits cards = map (\suit -> length $ filter (\x -> getSuit x == suit) $ cards) allSuits
+countSuits cards = map (\s -> length $ filter (\x -> suit x == s) $ cards) allSuits
 
 isFlushC cards = any (>=5) $ countSuits cards
 isFlush comm hand = isFlushC (hand++comm)
 
 prdR x | r == Two  = Ace
        | otherwise = pred r
-     where r = getRank x
+     where r = rank x
 
 isStraight m comm hand = searchS 1 [firstCard] firstCard otherCards
     where firstCard      = head cardsProcessed
           otherCards     = tail cardsProcessed
           cardsProcessed = cardsRevSorted ++ (filterA Ace cardsRevSorted)
           cardsRevSorted = reverse $ sort (hand ++ comm)
-          filterA a = filter (\x -> getRank x == a)
+          filterA a = filter (\x -> rank x == a)
           searchS _ res _ [] = res
           searchS n res prev (x:xs)
             | n < m && sequentialRank = searchS (n+1) (x:res) x xs
             | sameRank                = searchS n (x:res) x xs
             | n >=m && not sameRank   = res
             | otherwise               = searchS 1 [x] x xs
-            where sameRank       = getRank prev == getRank x
-                  sequentialRank = prdR prev == getRank x
+            where sameRank       = rank prev == rank x
+                  sequentialRank = prdR prev == rank x
 
 isStraightFlush comm hand = isFlushC $ isStraight 5 comm hand
 
 isFlushRoyal comm hand = (highestCardRank == Ace) && isFlushC straight
     where straight = isStraight 5 comm hand
-          highestCardRank = getRank $ head straight
-{--
-isStraight m comm hand = searchS 1 [] cardsProcessed
-    where cardsProcessed = cardsRevSorted ++ (filterA Ace cardsRevSorted)
-          cardsRevSorted = reverse $ sort (hand++comm)
-          filterA a l = filter (\x -> getRank x == a) l
-          searchS _ c [] = c
-          searchS n c (x0:x1:[])
-            | n < m-1                           = []
-            | prdR x0 == getRank x1             = (x1:x0:c)
-            | getRank x0 == getRank x1          = (x1:x0:c)
-            | otherwise                         = []
-          searchS n c (x0:x1:xs)
-            | prdR x0 == getRank x1 && n < m-1  = searchS (n+1) (x0:c) (x1:xs)
-            | prdR x0 == getRank x1 && n >= m-1 = (x1:x0:c)
-            | getRank x0 == getRank x1          = searchS n (x0:c) (x1:xs)
-            | otherwise                         = searchS 1 [] (x1:xs)
---}
+          highestCardRank = rank $ head straight
 
 pairsThreesFours :: [Card] -> [Card] -> [[Card]]
 pairsThreesFours comm hand = reverse $ sortBy (comparing length) $ splitRank cardsSorted
     where cardsSorted = sort (hand ++ comm)
           splitRank (x:xs) = [x : takeWhile (sameRankAs x) xs] ++ splitRank (dropWhile (sameRankAs x) xs)
           splitRank []     = []
-          sameRankAs x     = (== getRank x) . getRank
+          sameRankAs x     = (== rank x) .rank 
 
 fullHouse :: [Card] -> [Card] -> [([Card],[Card])]
 fullHouse c h = fullHousePTF $ pairsThreesFours c h
@@ -170,7 +149,7 @@ test = do
     putStrLn "\nNew state of deck"
     print $ sdeck3
 
-    print $ reverse $ sort (communityCards++myCards)
+    print $ reverse $ sort (communityCards ++ myCards)
     print $ isFlush communityCards myCards
 
     print "---"
