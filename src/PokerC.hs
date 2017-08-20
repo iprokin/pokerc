@@ -23,8 +23,7 @@ module PokerC
 
 import Data.Function
 import System.Random.Shuffle
-import Data.List (sort)
-import Data.List (sortBy)
+import Data.List (sort, sortBy)
 import Data.Ord (comparing)
 
 data Rank = Two | Three | Four | Five | Six | Seven
@@ -66,16 +65,16 @@ instance Show Card where
 
 allSuits = [Clubs, Diamonds, Hearts, Spades]
 allRanks = [Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten, Jack, Queen, King, Ace]
-deck = foldl (++) [] $ map (\s -> map (flip Card s) allRanks) allSuits
+deck = concatMap (\s -> map (flip Card s) allRanks) allSuits
 
-removeFromDeck cards deck = filter (\c -> all (/=c) cards) deck
+removeFromDeck cards = filter (`notElem` cards)
 
 giveCardsToPlayers _ _ [] = []
 giveCardsToPlayers 0 _ _  = []
 giveCardsToPlayers nPlayers nCards deck = 
-    [take nCards deck] ++ giveCardsToPlayers (nPlayers-1) nCards (drop nCards deck)
+    take nCards deck : giveCardsToPlayers (nPlayers-1) nCards (drop nCards deck)
 
-countSuits cards = map (\s -> length $ filter (\x -> suit x == s) $ cards) allSuits
+countSuits cards = map (\s -> length $ filter ((==s) . suit) $ cards) allSuits
 
 isFlushC cards = any (>=5) $ countSuits cards
 isFlush comm hand = isFlushC (hand++comm)
@@ -87,8 +86,8 @@ prdR x | r == Two  = Ace
 isStraight m comm hand = searchS 1 [firstCard] firstCard otherCards
     where firstCard      = head cardsProcessed
           otherCards     = tail cardsProcessed
-          cardsProcessed = cardsRevSorted ++ (filterA Ace cardsRevSorted)
-          cardsRevSorted = reverse $ sort (hand ++ comm)
+          cardsProcessed = cardsRevSorted ++ filterA Ace cardsRevSorted
+          cardsRevSorted = sortBy (flip compare) (hand ++ comm)
           filterA a = filter (\x -> rank x == a)
           searchS _ res _ [] = res
           searchS n res prev (x:xs)
@@ -106,9 +105,9 @@ isFlushRoyal comm hand = (highestCardRank == Ace) && isFlushC straight
           highestCardRank = rank $ head straight
 
 pairsThreesFours :: [Card] -> [Card] -> [[Card]]
-pairsThreesFours comm hand = reverse $ sortBy (comparing length) $ splitRank cardsSorted
+pairsThreesFours comm hand = sortBy (flip (comparing length)) $ splitRank cardsSorted
     where cardsSorted = sort (hand ++ comm)
-          splitRank (x:xs) = [x : takeWhile (sameRankAs x) xs] ++ splitRank (dropWhile (sameRankAs x) xs)
+          splitRank (x:xs) = (x : takeWhile (sameRankAs x) xs) : splitRank (dropWhile (sameRankAs x) xs)
           splitRank []     = []
           sameRankAs x     = (== rank x) .rank 
 
@@ -130,39 +129,39 @@ test = do
     let nPlayers = 6
     let myCards = [Card Ace Spades, Card Ace Clubs]
     let boardCards = [Card Ace Diamonds]
-    let sdeck0 = removeFromDeck boardCards $ sdeck
-    let sdeck1 = removeFromDeck myCards $ sdeck0
+    let sdeck0 = removeFromDeck boardCards sdeck
+    let sdeck1 = removeFromDeck myCards sdeck0
     putStrLn "\nI take my cards"
-    print $ myCards
+    print myCards
     putStrLn "\nNew state of deck"
-    print $ sdeck1
+    print sdeck1
     putStrLn "\nGiving players their cards"
     let p = giveCardsToPlayers (nPlayers-1) 2 sdeck1
-    print $ p
+    print p
     let sdeck2 = drop ((nPlayers-1)*2) sdeck1
     putStrLn "\nNew state of deck"
-    print $ sdeck2
+    print sdeck2
     putStrLn "\ncommunity cards"
     let communityCards = take (5-length boardCards) sdeck2
     print communityCards
     let sdeck3 = drop 5 sdeck2
     putStrLn "\nNew state of deck"
-    print $ sdeck3
+    print sdeck3
 
-    print $ reverse $ sort (communityCards ++ myCards)
+    print $ sortBy (flip compare) (communityCards ++ myCards)
     print $ isFlush communityCards myCards
 
     print "---"
 
     let communityCardsT = [Card Nine Spades, Card Jack Diamonds, Card Ten Diamonds, Card King Spades, Card Ten Hearts, Card Queen Diamonds, Card Six Spades]
-    print $ reverse $ sort (communityCardsT++myCards)
+    print $ sortBy (flip compare) (communityCardsT++myCards)
     print $ isStraight 5 communityCardsT myCards
     print $ isFlushRoyal communityCardsT myCards
 
     print "---"
 
     let cc = [Card Two Spades, Card Three Spades, Card Four Hearts, Card Five Clubs, Card Ten Spades]
-    print $ reverse $ sort (cc++myCards)
+    print $ sortBy (flip compare) (cc++myCards)
     print $ isStraight 5 cc myCards
 
     print "==="

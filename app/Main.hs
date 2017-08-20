@@ -19,7 +19,7 @@
 
 module Main where
 
-import pokerc
+import PokerC
 
 main :: IO ()
 main = test
