@@ -2,16 +2,23 @@
 
 Functional Poker Odds Calculator.
 
+
+The goal of this project is to learn Haskell and develop a solid alternative to PokerStove.
+
+
 What works:
 * Finding out combinations.
+* Determination of the winner
 
 To-to:
-* Determination of the winner
 * Monte-Carlo computation of P(win).
+* Commandline user interface
+    - Ranges for opponents
+    - 4-color deck?
 
 
 \
-\
+
 
 <pre>
 Copyright 2017 Ilya Prokin

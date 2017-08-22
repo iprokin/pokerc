@@ -83,7 +83,7 @@ data BestHand =
   | FullHouse Rank
   | FourOfAKind Rank
   | StraightFlush Rank
-  | FlushRoyal Bool
+  | FlushRoyal
       deriving (Show, Ord, Eq)
 
 sortR :: Ord a => [a] -> [a]
@@ -99,6 +99,12 @@ filterNsPTF f (Just ptf)
   | (not.null) frd = Just frd
   | otherwise      = Nothing
   where frd = filter (f . length) ptf
+
+bestFlushRoyal :: [Card] -> Maybe BestHand
+bestFlushRoyal cards
+  | foundFR   = Just FlushRoyal
+  | otherwise = Nothing 
+  where foundFR = isFlushRoyal cards
 
 bestStraightFlush :: [Card] -> Maybe BestHand
 bestStraightFlush cards = onJust (StraightFlush . rank . head) hsf
@@ -118,10 +124,19 @@ bestXOfAKind n dataC cards = onJust (dataC . takeWithHighestRank) nplets
 bestFourOfAKind  = bestXOfAKind 4 FourOfAKind
 bestThreeOfAKind = bestXOfAKind 3 ThreeOfAKind
 
+bestHighCard :: [Card] -> Maybe BestHand
+bestHighCard []    = Nothing
+bestHighCard [x]   = Nothing
+bestHighCard cards = Just HighCard
+    { cardHC    = head ranksS
+    , kickersHC = (take 4 . tail) ranksS 
+    } where ranksS = (map rank . sortR) cards
+
+--{-
 bestPair :: [Card] -> Maybe BestHand
 bestPair cards = onJust (makePair cardsS . takeHighestPair) nplets
     where
-        takeHighestPair = head . sortBy (compare `on` head)
+        takeHighestPair = head . sortBy (flip compare `on` head)
         makePair cardsS hP = Pair
             { pairP    = (rank . head) hP
             , kickersP = map rank $ take 3 $ removeCards hP cardsS
@@ -136,7 +151,7 @@ bestTwoPair cards = onJust (makeTwoPair cardsS) (takeHighestTwoPair nplets)
         takeHighestTwoPair (Just nplets)
             | length hTP == 2 = Just hTP
             | otherwise       = Nothing
-            where hTP = take 2 . sortBy (compare `on` (rank . head)) $ nplets
+            where hTP = take 2 . sortBy (flip compare `on` (rank . head)) $ nplets
         takeHighestTwoPair Nothing = Nothing
 
         makeTwoPair cardsS hTP = TwoPair
@@ -147,22 +162,13 @@ bestTwoPair cards = onJust (makeTwoPair cardsS) (takeHighestTwoPair nplets)
         ptf    = pairsThreesFours cards
         nplets = filterNsPTF (>=2) ptf
         cardsS = sortR cards
-
+--}
 bestFullHouse :: [Card] -> Maybe BestHand
 bestFullHouse cards = onJust (FullHouse . takeHighestFH) fh
     where
         takeHighestFH   = head . sortR . map (rank . head . fst)
         fh              = fullHouse cards
 
-{-
-bestTwoPair :: [Card] -> Maybe BestHand
-bestTwoPair cards = TwoPair
-    { pairsTP  = to2tuple (map (rank . head) highestTwoPair)
-    , kickerTP = rank . head $ removeCards (concat highestTwoPair) cardsS
-    }
-        where
-            highestTwoPair = take 2 $ sortBy (compare `on` (rank . head)) pairs
--}
 {-
 bestOfAKind :: [Card] -> Maybe BestHand
 bestOfAKind cards
@@ -172,19 +178,27 @@ bestOfAKind cards
   | otherwise   = Nothing
     where
         dealWithPairs pairs
-          | onJust length pairs >= Just 2 = toTwoPair pairs
-          | otherwise                     = toPair pairs
-        --onJust (Pair . head) pairs
+          | onJust length pairs >= Just 2 =
+              onJust (makeTwoPair cardsS) (takeHighestTwoPair pairs)
+          | otherwise                     =
+              onJust (makePair cardsS . takeHighestPair) pairs
 
-        toPair pairs = onJust
-        (Pair
+        takeHighestPair = head . sortBy (flip compare `on` head)
+        makePair cardsS hP = Pair
             { pairP    = (rank . head) hP
-            , kickersP = map rank $ take 3 $ removeCards hP cards
+            , kickersP = map rank $ take 3 $ removeCards hP cardsS
             }
-        )
-        toTwoPair pairs = onJust $ TwoPair
-            { pairsTP = to2tuple (map (rank . head) pairs)
-            , kickerTP = rank . head $ removeCards (concat pair) cards
+
+        takeHighestTwoPair (Just nplets)
+            | length hTP == 2 = Just hTP
+            | otherwise       = Nothing
+            where
+                hTP = take 2 . sortBy (flip compare `on` (rank . head)) $ nplets
+        takeHighestTwoPair Nothing = Nothing
+
+        makeTwoPair cardsS hTP = TwoPair
+            { pairsTP  = to2tuple (map (rank . head) hTP)
+            , kickerTP = rank . head $ removeCards (concat hTP) cardsS
             }
 
         takeH   = head . sortR . map (rank . head)
@@ -192,10 +206,25 @@ bestOfAKind cards
         ptfGE2  = filterNsPTF (>=2) ptf
         sel n   = filterNsPTF (==n) ptfGE2
         n       = onJust (maximum . map length) ptfGE2
--}
+        cardsS  = sortR cards
+--}
 bestFlush :: [Card] -> Maybe BestHand
 bestFlush cards = onJust (Flush . maximum . map (rank . maximum)) $ findFlushes cards
 
+findBestHand :: [Card] -> BestHand
+findBestHand cards = head . catMaybes . map ($ cards) $
+          [ bestFlushRoyal
+          , bestStraightFlush
+          , bestFourOfAKind
+          , bestFullHouse
+          , bestFlush
+          , bestStraight
+          , bestThreeOfAKind
+          , bestTwoPair
+          , bestPair
+          , bestHighCard
+          ]
+              {-
 test = do
     sdeck <- shuffleM deck
     let cards = take 7 sdeck
@@ -204,14 +233,17 @@ test = do
         fourOk = [Card Queen Diamonds, Card Ten Spades, Card King Diamonds, Card Ten Clubs, Card Ten Hearts, Card Six Hearts, Card Ten Clubs]
         fourOk2 = [Card Queen Diamonds, Card Ten Spades, Card Queen Diamonds, Card Ten Clubs, Card Ten Hearts, Card Queen Hearts, Card Ten Clubs, Card Queen Clubs]
         fh = [Card Two Spades, Card Queen Spades, Card Two Diamonds, Card Three Hearts, Card King Hearts, Card Three Spades, Card Three Diamonds]
+        twoP = [Card Seven Hearts, Card Ace Spades, Card Eight Spades, Card Ace Hearts, Card Two Diamonds, Card Seven Diamonds, Card Eight Clubs]
     print cards
     print $ bestStraightFlush cards
     print $ bestStraightFlush stFlush
     print $ bestStraight st
+        {-
     putStrLn "--"
     print $ fourOk
     print $ bestPair fourOk
     print $ bestTwoPair fourOk
+-}
     {-
     print $ bestFourOfAKind st
     print $ bestFourOfAKind fourOk
@@ -220,9 +252,16 @@ test = do
     print $ bestThreeOfAKind fourOk
     print $ bestThreeOfAKind fourOk2
     -}
+        {-
+    putStrLn "===="
+    print $ bestOfAKind fourOk
+    print $ bestOfAKind fourOk2
+    print $ bestOfAKind twoP
+    putStrLn "===="
+-}
     print $ bestFullHouse fourOk
     print $ bestFullHouse fh
-    print $ groupBy ((==) `on` rank) . sortBy (compare `on` rank) $ fourOk2
+    print $ groupBy ((==) `on` rank) . sortBy (flip compare `on` rank) $ fourOk2
 
     let cards = take 30 sdeck
      in do
@@ -230,35 +269,6 @@ test = do
          print $ findFlushes cards
          print $ bestFlush cards
          print $ bestFlush st
-
-
-{-
-toFullHouse :: Maybe ([Card], [Card]) -> Maybe BestHand
-toFullHouse (Just highestFullHouse) = FullHouse
-    { threeFH = (rank . head . fst) highestFullHouse
-    , pairFH  = (rank . head . snd) highestFullHouse
-    }
-toFullHouse Nothing = Nothing
-
-
-toTwoPair :: Maybe [[Card]] -> [Card] -> Maybe BestHand
-toTwoPair (Just highestTwoPair) cardsS = TwoPair
-    { pairsTP  = to2tuple (map (rank . head) highestTwoPair)
-    , kickerTP = rank . head $ removeCards (concat highestTwoPair) cardsS
-    }
-toTwoPair Nothing = Nothing
-
-toPair :: Maybe [[Card]] -> [Card] -> Maybe BestHand
-toPair (Just hP) cardsS = Pair
-    { pairP    = (rank . head) hP
-    , kickersP = map rank $ take 3 $ removeCards hP cardsS
-    }
-toPair Nothing = Nothing
-
-toHighCard cardsS = HighCard
-    { cardHC    = rank highestCard
-    , kickersHC = map rank $ take 4 $ removeCards [highestCard] cardsS
-    } where highestCard = head cardsS
 
 -}
 maxHead :: Ord a => Maybe [[a]] -> Maybe [a]
@@ -429,50 +439,6 @@ findBestHand cards
       fh      = fullHousePTF ptf
       ptf     = pairsThreesFours cardsS
 -}
-{-
-findBestHand :: [Card] -> BestHand
-findBestHand cards
-  | isFlushRoyal     = FlushRoyal isStraightFlush
-  | isStraightFlush  = StraightFlush (head highestStaightFlush)
-  | isFour           = FourOfAKind (head highestFour)
-  | isFullHouse      = toFullHouse $ highestFullHouse
-  | isFlush          = highestFlush
-  | isStraight       = highestStaight
-  | isThree          = highestThree
-  | isTwoPair        = (highestTwoPair, kickerTP)
-  | isPair           = (highestPair, kickersP)
-  | otherwise        = (highCard, kickersHC)
-  where n = 5
-        cardsS = sort cards
-        isFlushRoyal = (== Ace) . rank . head $ highestStaightFlush
-        isStraightFlush = highestStaightFlush /= []
-        isFour = fours /= []
-        isFullHouse = fh /= []
-        isFlush = flushes /=[]
-        isStraight = highestStaight /= []
-        isThree = threes /= []
-        isTwoPair = length pairs >= 2
-        isPair = pairs /= []
-        highestStaightFlush = findHighestStraightsNflushes n flushes
-        highestFour = (head . sort . map head) fours
-        highestFullHouse = head $ sortBy (compare `on` (head . fst)) fh
-        toFullHouse hf = FullHouse {threeFH=(head . fst) hf, pairFH=(head . snd) hf}
-        highestFlush = (head . sort . map head) flushes
-        highestStaight = findHighestStraightN n cards
-        highestThree = (head . sort . map head) threes
-        highestPair = (head . sort . map head) pairs
-        highestTwoPair = take 2 $ sortBy (compare `on` (rank . head)) pairs
-        highCard = head cardsS
-        kickerTP = take 1 $ removeCards (concat highestTwoPair) cardsS
-        kickersP = (take 3 . removeCards [highestPair]) cardsS
-        kickersHC = (take 3 . removeCards [highCard]) cardsS
-        flushes = findFlushesN n cards
-        fours = filter ((==4) . length) ptf
-        threes = filter ((==3) . length) ptf
-        pairs = filter ((==2) . length) ptf
-        fh = fullHousePTF ptf
-        ptf = pairsThreesFours cards
--}
 
 {-
 testForSdeck [] = []
@@ -494,6 +460,59 @@ test1 = do
         cardsS = sortBy (flip compare) cards
     print $ findBestHand cards
 -}
+
+{-
+findWinner communityCards playersCards = head rankedPlayers
+    where
+        enumeratedPlayers = zip [1..length playersCards] playersCards 
+        rankedPlayers = sortBy cmp enumeratedPlayers
+        cmp = flip compare `on` (findBestHand . (++communityCards) . snd)
+-}
+
+enumerateAndRankPlayers communityCards playersCards = rankedPlayers
+    where
+        playersRes    = zip playersCards $
+            map (findBestHand . (++communityCards)) playersCards
+        enumeratedRes = zip [1..length playersRes] playersRes
+        rankedPlayers = sortBy cmp enumeratedRes
+        cmp = flip compare `on` snd . snd
+
+findWinner :: [Card] -> [[Card]] -> (Int, ([Card], BestHand))
+findWinner cC = head . enumerateAndRankPlayers cC
+
+test = do
+    sdeck <- shuffleM deck
+    putStrLn "Initial state of deck"
+    print $ sdeck
+
+    let nPlayers = 6
+    let myCards = [Card Ace Spades, Card Ace Clubs]
+    let commCardsKnown = [Card Ace Diamonds]
+    let sdeck0 = removeCards commCardsKnown sdeck
+    let sdeck1 = removeCards myCards sdeck0
+    putStrLn "\nI take my cards"
+    print myCards
+    putStrLn "\nNew state of deck"
+    print sdeck1
+    putStrLn "\nGiving players their cards"
+    let p = giveCardsToPlayers (nPlayers-1) 2 sdeck1
+    print p
+    let sdeck2 = drop ((nPlayers-1)*2) sdeck1
+    putStrLn "\nNew state of deck"
+    print sdeck2
+    putStrLn "\ncommunity cards"
+    let commCardsRemaining = take (5-length commCardsKnown) sdeck2
+    let communityCards = commCardsKnown ++ commCardsRemaining
+    print communityCards
+    let sdeck3 = drop 5 sdeck2
+    putStrLn "\nNew state of deck"
+    print sdeck3
+
+    putStrLn "\nAnd...the winner is...\n"
+    print $ findWinner communityCards (myCards : p)
+    putStrLn "\n"
+    mapM_ print $ tail $ enumerateAndRankPlayers communityCards (myCards : p)
+
 
 {-
 test = do
