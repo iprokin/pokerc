@@ -23,6 +23,7 @@ module PokerC
 
 import Data.Function
 import System.Random.Shuffle
+import Control.Monad.Random
 import Data.List (sort, sortBy, groupBy)
 import Data.Ord (comparing)
 import Data.Maybe-- (listToMaybe, Maybe)
@@ -224,53 +225,7 @@ findBestHand cards = head . catMaybes . map ($ cards) $
           , bestPair
           , bestHighCard
           ]
-              {-
-test = do
-    sdeck <- shuffleM deck
-    let cards = take 7 sdeck
-        stFlush = [Card Queen Diamonds, Card Ten Diamonds, Card Eight Diamonds, Card Five Hearts, Card Nine Diamonds, Card Jack Spades, Card Jack Diamonds]
-        st = [Card Queen Diamonds, Card Ten Spades, Card Eight Diamonds, Card Five Hearts, Card Nine Diamonds, Card Jack Spades, Card Jack Diamonds]
-        fourOk = [Card Queen Diamonds, Card Ten Spades, Card King Diamonds, Card Ten Clubs, Card Ten Hearts, Card Six Hearts, Card Ten Clubs]
-        fourOk2 = [Card Queen Diamonds, Card Ten Spades, Card Queen Diamonds, Card Ten Clubs, Card Ten Hearts, Card Queen Hearts, Card Ten Clubs, Card Queen Clubs]
-        fh = [Card Two Spades, Card Queen Spades, Card Two Diamonds, Card Three Hearts, Card King Hearts, Card Three Spades, Card Three Diamonds]
-        twoP = [Card Seven Hearts, Card Ace Spades, Card Eight Spades, Card Ace Hearts, Card Two Diamonds, Card Seven Diamonds, Card Eight Clubs]
-    print cards
-    print $ bestStraightFlush cards
-    print $ bestStraightFlush stFlush
-    print $ bestStraight st
-        {-
-    putStrLn "--"
-    print $ fourOk
-    print $ bestPair fourOk
-    print $ bestTwoPair fourOk
--}
-    {-
-    print $ bestFourOfAKind st
-    print $ bestFourOfAKind fourOk
-    print $ bestFourOfAKind fourOk2
-    print $ bestThreeOfAKind st
-    print $ bestThreeOfAKind fourOk
-    print $ bestThreeOfAKind fourOk2
-    -}
-        {-
-    putStrLn "===="
-    print $ bestOfAKind fourOk
-    print $ bestOfAKind fourOk2
-    print $ bestOfAKind twoP
-    putStrLn "===="
--}
-    print $ bestFullHouse fourOk
-    print $ bestFullHouse fh
-    print $ groupBy ((==) `on` rank) . sortBy (flip compare `on` rank) $ fourOk2
 
-    let cards = take 30 sdeck
-     in do
-         print cards
-         print $ findFlushes cards
-         print $ bestFlush cards
-         print $ bestFlush st
-
--}
 maxHead :: Ord a => Maybe [[a]] -> Maybe [a]
 maxHead Nothing = Nothing
 maxHead (Just x) = listToMaybe . sortBy (flip compare `on` head) $ x--sortByHead
@@ -304,12 +259,6 @@ giveCardsToPlayers 0 _ _  = []
 giveCardsToPlayers nPlayers nCards deck = 
     take nCards deck : giveCardsToPlayers (nPlayers-1) nCards (drop nCards deck)
 
-{-
-countSuits cards = map (\s -> length $ filter ((==s) . suit) $ cards) allSuits
-
-isFlushC cards = any (>=5) $ countSuits cards
-isFlush comm hand = isFlushC (hand++comm)
--}
 findFlushesN :: Int -> [Card] -> Maybe [[Card]]
 findFlushesN n = maybeNotNull . filter ((>=n) . length) . groupBy ((==) `on` suit) . sortBy (comparing suit)
 findFlushes = findFlushesN 5
@@ -461,14 +410,6 @@ test1 = do
     print $ findBestHand cards
 -}
 
-{-
-findWinner communityCards playersCards = head rankedPlayers
-    where
-        enumeratedPlayers = zip [1..length playersCards] playersCards 
-        rankedPlayers = sortBy cmp enumeratedPlayers
-        cmp = flip compare `on` (findBestHand . (++communityCards) . snd)
--}
-
 enumerateAndRankPlayers communityCards playersCards = rankedPlayers
     where
         playersRes    = zip playersCards $
@@ -480,7 +421,86 @@ enumerateAndRankPlayers communityCards playersCards = rankedPlayers
 findWinner :: [Card] -> [[Card]] -> (Int, ([Card], BestHand))
 findWinner cC = head . enumerateAndRankPlayers cC
 
+-- Play game and see if I (the player #1) won.
+playGame :: [Card] -> Int -> [Card] -> [Card] -> [[Card]] -> Bool
+playGame shuffledDeck nPlayers myCards commCardsKnown othersCardsKnown =
+    1 == (fst $ findWinner communityCards allPlayersCards)
+        where
+            knownCards              = myCards ++ commCardsKnown ++ (concat othersCardsKnown)
+            deckNoKnownCards        = removeCards knownCards shuffledDeck
+            nOtherPlayersGivenCards = length othersCardsKnown
+            n                       = nPlayers - nOtherPlayersGivenCards - 1
+            othersCardsUnknown      = giveCardsToPlayers n 2 deckNoKnownCards
+            deckNoKnownNoPlayers    = drop (2*n) deckNoKnownCards
+            commCardsRemaining      = take (5-length commCardsKnown) deckNoKnownNoPlayers
+            communityCards          = commCardsKnown ++ commCardsRemaining
+            allPlayersCards         = myCards : (othersCardsKnown ++ othersCardsUnknown)
+
+playGameImpure :: MonadRandom m => Int -> [Card] -> [Card] -> [[[Card]]] -> m Bool
+playGameImpure nPlayers myCards commCardsKnown othersCardsRanges = do
+    sdeck <- shuffleM deck
+    let pGI = playGame sdeck nPlayers myCards commCardsKnown
+     in
+     case othersCardsRanges of
+       []        -> do
+           oCRshuffled <- mapM shuffleM othersCardsRanges
+           let othersCardsKnown = map head oCRshuffled
+           return (pGI othersCardsKnown)
+       otherwise -> do
+           return (pGI [])
+
+{-
+-- Heavy on memory, but ok for small nSim
+pWinMonteCarlo :: MonadRandom m => Integer -> Int -> [Card] -> [Card] -> [[[Card]]] -> m Double
+pWinMonteCarlo nSim nPlayers myCards commCardsKnown othersCardsRanges = do
+    let pGI = playGameImpure nPlayers myCards commCardsKnown othersCardsRanges
+    nWin <- mapM (\_ -> pGI) [1..nSim] >>= return . length . filter id
+    return (fromIntegral nWin / fromIntegral nSim)
+--}
+
+{-
+foldM' :: (Monad m) => (a -> b -> m a) -> a -> [b] -> m a
+foldM' _ z [] = return z
+foldM' f z (x:xs) = do
+    z' <- f z x
+    z' `seq` foldM' f z' xs
+
+pWinMonteCarlo :: MonadRandom m => Integer -> Int -> [Card] -> [Card] -> [[[Card]]] -> m Double
+pWinMonteCarlo nSim nPlayers myCards commCardsKnown othersCardsRanges = do
+    let pGI = playGameImpure nPlayers myCards commCardsKnown othersCardsRanges
+        f total _ = do
+            pR <- pGI
+            if pR
+               then return total
+               else return (total+1)
+    nWin <- foldM' f 0 [1..nSim]
+    return (fromIntegral nWin / fromIntegral nSim)
+--}
+
+--{-
+pWinMonteCarlo :: MonadRandom m => Integer -> Int -> [Card] -> [Card] -> [[[Card]]] -> m Double
+pWinMonteCarlo nSim nPlayers myCards commCardsKnown othersCardsRanges = do
+    let pGI = playGameImpure nPlayers myCards commCardsKnown othersCardsRanges
+    let go 0 total = return total
+        go n total = do
+            pR <- pGI
+            if pR 
+               then go (n-1) (total+1)
+               else go (n-1) total
+    nWin <- go nSim 0
+    return (fromIntegral nWin / fromIntegral nSim)
+--}
+
+--{-
 test = do
+    let myCards           = [Card Ace Spades, Card Ace Clubs]
+        commCardsKnown    = []
+        othersCardsRanges = []
+    pWin <- pWinMonteCarlo 30000 3 myCards commCardsKnown othersCardsRanges
+    print pWin
+--}
+
+test0 = do
     sdeck <- shuffleM deck
     putStrLn "Initial state of deck"
     print $ sdeck
@@ -488,8 +508,9 @@ test = do
     let nPlayers = 6
     let myCards = [Card Ace Spades, Card Ace Clubs]
     let commCardsKnown = [Card Ace Diamonds]
-    let sdeck0 = removeCards commCardsKnown sdeck
-    let sdeck1 = removeCards myCards sdeck0
+    --let sdeck0 = removeCards commCardsKnown sdeck
+    --let sdeck1 = removeCards myCards sdeck0
+    let sdeck1 = removeCards (myCards ++ commCardsKnown) sdeck
     putStrLn "\nI take my cards"
     print myCards
     putStrLn "\nNew state of deck"
@@ -512,78 +533,3 @@ test = do
     print $ findWinner communityCards (myCards : p)
     putStrLn "\n"
     mapM_ print $ tail $ enumerateAndRankPlayers communityCards (myCards : p)
-
-
-{-
-test = do
-    sdeck <- shuffleM deck
-    putStrLn "Initial state of deck"
-    print $ sdeck
-
-    let nPlayers = 6
-    let myCards = [Card Ace Spades, Card Ace Clubs]
-    let boardCards = [Card Ace Diamonds]
-    let sdeck0 = removeCards boardCards sdeck
-    let sdeck1 = removeCards myCards sdeck0
-    putStrLn "\nI take my cards"
-    print myCards
-    putStrLn "\nNew state of deck"
-    print sdeck1
-    putStrLn "\nGiving players their cards"
-    let p = giveCardsToPlayers (nPlayers-1) 2 sdeck1
-    print p
-    let sdeck2 = drop ((nPlayers-1)*2) sdeck1
-    putStrLn "\nNew state of deck"
-    print sdeck2
-    putStrLn "\ncommunity cards"
-    let communityCards = take (5-length boardCards) sdeck2
-    print communityCards
-    let sdeck3 = drop 5 sdeck2
-    putStrLn "\nNew state of deck"
-    print sdeck3
-
-    print $ sortBy (flip compare) (communityCards ++ myCards)
-    print $ findFlushes (communityCards++myCards)
-
-    print "-look for Straight and FLush Royal--"
-
-    let communityCardsT = [Card Nine Spades, Card Jack Diamonds, Card Ten Diamonds, Card King Spades, Card Ten Hearts, Card Queen Diamonds, Card Six Spades]
-    print $ sortBy (flip compare) (communityCardsT++myCards)
-    print $ findHighestStraight $ communityCardsT ++ myCards
-    print $ isFlushRoyal $ communityCardsT ++ myCards
-    print $ findHighestStraight $ deck
-    print $ isFlushRoyal $ deck
-
-    print "---"
-
-    let cc = [Card Two Spades, Card Three Spades, Card Four Hearts, Card Five Clubs, Card Ten Spades]
-    print $ sortBy (flip compare) (cc++myCards)
-    --print $ isStraight 5 cc myCards
-
-    print "==="
-    --print $ isStraight 5 (take 5 sdeck) (drop 5 sdeck)
-
-    print "=============="
-    print $ pairsThreesFours (communityCardsT++myCards)
-    print $ fullHouse $ (Card Ace Spades : communityCardsT)++myCards
-    --print $ fullHouse (Card Five Spades : cc) myCards
-    print "LOOK FOR ALL"
-    --print $ findBestHand (communityCards++myCards)
-    
-    print $ findHighestStraightN 5 $ take 5 sdeck3
-    print $ findHighestStraightN 5 $ [Card Ten Spades, Card Jack Diamonds, Card Nine Spades, Card Eight Clubs, Card Queen Hearts]
-    mapM_ print $ testForSdeck sdeck3
-    print "testing Hand Vs Hand"
-    print $ length sdeck
-    let ha = take 7 sdeck
-        hb = take 7 . drop 7 $ sdeck
-    putStrLn $ "HandA " ++ show ha
-    putStrLn $ "HandB " ++ show hb
-    let handa = findBestHand ha
-    let handb = findBestHand hb
-    putStrLn "   "
-    putStrLn $ "HandA " ++ show handa
-    putStrLn $ "HandB " ++ show handb
-    putStrLn "   "
-    putStrLn $ "HandA vs HandB " ++ show (compare handa handb)
--}

@@ -1,23 +1,22 @@
 # pokerc
 
-Functional Poker Odds Calculator.
+Functional Texas Hold'em Poker Odds Calculator.
 
 
-The goal of this project is to learn Haskell and develop a solid alternative to PokerStove.
+The goal of this project is to learn Haskell and develop a solid cross-platiform alternative to PokerStove.
 
 
 What works:
 * Finding out combinations.
 * Determination of the winner
+* Monte-Carlo computation of P(win).
 
 To-to:
-* Monte-Carlo computation of P(win).
 * Commandline user interface
     - Ranges for opponents
-    - 4-color deck?
+    - Find out the optimal number of trials
 
 
-\
 
 
 <pre>
