@@ -20,6 +20,64 @@
 module Main where
 
 import PokerC
+import Data.Semigroup ((<>))
+import Options.Applicative
+
+data Opts = Opts
+    { argNplayers  :: Int
+    , argMyCards   :: String
+    , optBoard     :: String
+    , optOppRanges :: String
+    , optDeadCards :: String
+    }
 
 main :: IO ()
-main = test
+main = do
+    opts <- execParser optsParser
+    let nPlayers          = argNplayers opts
+        myCards           = stringToCards (argMyCards opts)
+        commCardsKnown    = stringToCards (optBoard opts)
+        othersCardsRanges = []
+    putStrLn (concat
+        [ "Hello, your cards are ", concatMap show myCards
+        , ", the board is ", concatMap show commCardsKnown
+        , ", your opponents have ", optOppRanges opts
+        ])
+    pWin <- pWinMonteCarlo 30000 nPlayers myCards commCardsKnown othersCardsRanges
+    print pWin
+  where
+    optsParser =
+        info
+            (helper <*> versionOption <*> programOptions)
+            (fullDesc <> progDesc "optparse example" <>
+             header
+                 "optparse-example - a small example program for optparse-applicative")
+    versionOption = infoOption "0.0" (long "version" <> help "Show version")
+    programOptions = Opts
+        <$> argument auto
+            ( metavar "NUMBER_OF_PLAYERS" )
+        <*> argument str--auto
+            ( metavar "YOUR_CARDS"
+           <> help    "E.g. AsAd, Th9h" )
+        <*> strOption--option auto
+            ( long    "board"
+           <> short   'b'
+           <> value   ""
+           <> help    "Known community cards. E.g.: As9dTh, 2d5s5cJh, QsQhQdQc9h" )
+        <*> strOption
+            ( long    "opr"
+           <> short   'r'
+           <> metavar "OPPONENT1RANGE,OPPONENT2RANGE,..."
+           <> value   ""
+           <> help    "Opponent ranges" )
+        <*> strOption
+            ( long    "dead"
+           <> metavar "DEADCARDS"
+           <> value   ""
+           <> help    "Cards that are absent from the deck" )
+
+
+
+--main :: IO ()
+--main = test
+

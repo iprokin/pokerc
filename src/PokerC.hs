@@ -19,6 +19,8 @@
 
 module PokerC 
     ( test
+    , pWinMonteCarlo
+    , stringToCards
     ) where
 
 import Data.Function
@@ -27,34 +29,50 @@ import Control.Monad.Random
 import Data.List (sort, sortBy, groupBy)
 import Data.Ord (comparing)
 import Data.Maybe-- (listToMaybe, Maybe)
+import Data.Char (isSpace, toUpper)
+
+rankDict :: [(Rank, Char)]
+rankDict =
+    [ (Two,   '2')
+    , (Three, '3')
+    , (Four,  '4')
+    , (Five,  '5')
+    , (Six,   '6')
+    , (Seven, '7')
+    , (Eight, '8')
+    , (Nine,  '9')
+    , (Ten,   'T')
+    , (Jack,  'J')
+    , (Queen, 'Q')
+    , (King,  'K')
+    , (Ace,   'A') ]
+
+suitDictR :: [(Suit, Char)]
+suitDictR =
+    [ (Clubs,    'c')
+    , (Diamonds, 'd')
+    , (Hearts,   'h')
+    , (Spades,   's')
+    ]
+
+suitDictS :: [(Suit, Char)]
+suitDictS =
+    [ (Clubs,    '♣')
+    , (Diamonds, '♦')
+    , (Hearts,   '♥')
+    , (Spades,   '♠')
+    ]
 
 data Rank = Two | Three | Four | Five | Six | Seven
           | Eight | Nine | Ten | Jack | Queen | King | Ace
           deriving (Eq, Ord, Bounded, Enum)
 instance Show Rank where
-    show x = case x of
-               Two   -> "2"
-               Three -> "3"
-               Four  -> "4"
-               Five  -> "5"
-               Six   -> "6"
-               Seven -> "7"
-               Eight -> "8"
-               Nine  -> "9"
-               Ten   -> "T"
-               Jack  -> "J"
-               Queen -> "Q"
-               King  -> "K"
-               Ace   -> "A"
+    show x = [fromJust $ lookup x rankDict]
 
 data Suit = Clubs | Diamonds | Hearts | Spades
     deriving (Eq, Ord, Bounded, Enum)
 instance Show Suit where
-    show x = case x of
-               Clubs    -> "♣"
-               Diamonds -> "♦"
-               Hearts   -> "♥"
-               Spades   -> "♠"
+    show x = [fromJust $ lookup x suitDictS]
 
 data Card = Card
     { rank :: Rank
@@ -64,6 +82,13 @@ instance Ord Card where
     compare = compare `on` rank
 instance Show Card where
     show (Card r s) = show r ++ show s ++ " "
+instance Read Card where
+    readsPrec i (c:cs) | isSpace c = readsPrec i cs
+    readsPrec _ (r:s:rest) =
+        case stringToCard_ [r,s] of
+            Nothing   -> []
+            Just card -> [(card,rest)]
+    readsPrec _ _ = []
 
 data BestHand =
     HighCard
@@ -86,6 +111,30 @@ data BestHand =
   | StraightFlush Rank
   | FlushRoyal
       deriving (Show, Ord, Eq)
+
+stringToCard_ :: String -> Maybe Card
+stringToCard_ [rankChar, suitChar] = do
+    rank <- lookup (toUpper rankChar) (map swap rankDict)
+    suit <- lookup suitChar (map swap suitDictR)
+    return $ Card rank suit
+  where
+    swap (a,b) = (b,a)
+stringToCard_ _ = Nothing
+
+stringToCards :: String -> [Card]
+stringToCards "" = []
+stringToCards s = (catMaybes . sTC) s
+    where sTC [] = []
+          sTC (r:s:rest)  = stringToCard_ (r:[s]) : sTC (rest)
+
+{-
+cardToString :: Card -> String
+cardToString card =
+    [ rank, suit ]
+  where
+    Just rank = lookup (cardRank card) rankIdentifiers
+    Just suit = lookup (cardSuit card) suitIdentifiers
+-}
 
 sortR :: Ord a => [a] -> [a]
 sortR = sortBy (flip compare)
@@ -250,7 +299,8 @@ onJust _ Nothing  = Nothing
 allSuits = [(minBound :: Suit)..]
 allRanks = [(minBound :: Rank)..]
 
-deck = concatMap (\s -> map (flip Card s) allRanks) allSuits
+--deck = concatMap (\s -> map (flip Card s) allRanks) allSuits
+deck = [Card r s | r <- allRanks, s <- allSuits]
 
 removeCards cards = filter (`notElem` cards)
 
@@ -491,14 +541,53 @@ pWinMonteCarlo nSim nPlayers myCards commCardsKnown othersCardsRanges = do
     return (fromIntegral nWin / fromIntegral nSim)
 --}
 
---{-
+fourth (_,_,_,a) = a
+
 test = do
+    let same  = (Spades, Spades)
+        other = (Spades, Clubs)
+        commCardsKnown    = []
+        othersCardsRanges = []
+
+    let csvfy (rank1, rank2, t, pW) = show rank1 ++ show rank2 ++ t ++ "\t" ++ show pW
+
+    let pW rank1 rank2 = do
+            pWs <- pWinMonteCarlo 30000 3 (myCardsMk same) commCardsKnown othersCardsRanges
+            pWo <- pWinMonteCarlo 30000 3 (myCardsMk other) commCardsKnown othersCardsRanges
+            let res =  
+                    [ (rank1, rank2, "s", pWs)
+                    , (rank1, rank2, "o", pWo)
+                    ]
+            return res
+            where
+                myCardsMk twoSuits = [ Card rank1 (fst twoSuits),  Card rank2 (snd twoSuits)]
+
+
+    ranked <- mapM (uncurry pW) [(r1, r2) | r1 <- allRanks, r2 <- [r1..Ace] ] >>= (return . map csvfy . sortBy (flip compare `on` fourth) . concat)
+    mapM_ putStrLn ranked
+
+    
+--{-
+test1 = do
     let myCards           = [Card Ace Spades, Card Ace Clubs]
         commCardsKnown    = []
         othersCardsRanges = []
     pWin <- pWinMonteCarlo 30000 3 myCards commCardsKnown othersCardsRanges
     print pWin
 --}
+
+breakOnFirst elem list = [takeWhile (/=elem) list, (tail . dropWhile (/=elem)) list]
+
+{-
+rangeParse string
+  | l == 2 = -- 58 single card
+  | l == 3 && last string == '+' = -- range QT+ or single card AKo
+  | l == 3 = -- single card AKo
+  | l == 4 && last string == '+' = -- range A9s+
+  | l == 4 = -- single card Ad9c
+  | l > 4  = map rangeParse (breakOnFirst '-' (take 9 string)) -- range like A2o-ATs
+-}
+
 
 test0 = do
     sdeck <- shuffleM deck
