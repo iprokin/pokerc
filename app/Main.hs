@@ -44,6 +44,7 @@ main = do
         , ", your opponents have ", optOppRanges opts
         ])
     pWin <- pWinMonteCarlo 30000 nPlayers myCards commCardsKnown othersCardsRanges
+    putStrLn "P(win) = "
     print pWin
   where
     optsParser =
